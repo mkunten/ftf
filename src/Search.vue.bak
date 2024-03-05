@@ -1,0 +1,585 @@
+<template>
+  <v-form v-model="isValid" @submit.prevent="onSubmit">
+    <v-container>
+      <v-row>
+        <v-col cols="12" sm="2" xs="0">
+        </v-col>
+        <v-col cols="12" sm="8" xs="10">
+          <v-text-field
+            v-model="searchParam.q"
+            label="text"
+            placefolder="input words to search"
+          ></v-text-field>
+        </v-col>
+        <v-col cols="12" sm="2">
+          <v-btn
+            :loading="isLoading"
+            type="submit"
+            block
+            class="mt-2"
+            text="Search"
+          ></v-btn>
+        </v-col>
+      </v-row>
+      <v-row>
+        <v-col
+          cols="12"
+          xs="4" sm="4"
+          class="pa-0 ma-0"
+          v-for="chb in elevelList"
+          :key="chb"
+        >
+          <v-checkbox
+            class="pa-0 ma-0"
+            v-model="searchParam.el"
+            :label="`${chb} (${recordCount[chb] || 0})`"
+            :value="chb"
+            density="compact"
+          ></v-checkbox>
+        </v-col>
+      </v-row>
+      <v-row>
+        <v-col
+          cols="12"
+          xs="2" sm="2"
+          class="pa-0 ma-0"
+        >
+          <v-chip
+            class="ma-4"
+            density="compact"
+            v-for="bid in searchParam.bid"
+            v-if="bid"
+            :key="bid"
+          >
+            bid:{{ bid }}
+            <RouterLink
+              v-bind:to="{
+                name: 'Search',
+                query: searchParam2Query<LocationQueryRaw>({
+                  bid: searchParam.bid.filter((s) => s !== bid),
+                }),
+              }"
+            >
+              <v-icon color="red" icon="mdi-close-circle"></v-icon>
+            </RouterLink>
+          </v-chip>
+        </v-col>
+      </v-row>
+    </v-container>
+    <v-container>
+      <v-row v-if="errmsg">
+        <v-col cols="12" md="8">
+          <v-card
+            hover
+            class="mt-2 pa-4"
+            color="error"
+          >
+            {{ errmsg }}
+          </v-card>
+        </v-col>
+      </v-row>
+      <v-row>
+        <v-col cols="12" md="4">
+          <v-card
+            v-if="facets"
+            hover
+            sticky-top
+            class="mt-2"
+          >
+            <v-list
+              v-for="(words, word) in (facets.keywords.words)"
+              :key="word"
+              density="compact"
+              class="py-0 facet"
+            >
+              <v-list-item>
+                <RouterLink
+                  v-bind:to="{
+                    name: 'Search',
+                    query: searchParam2Query<LocationQueryRaw>({
+                      q: word,
+                    }),
+                  }"
+                >
+                  <em :class="getColorName(words.class)">
+                    {{ word }}
+                  </em>
+                  <v-chip
+                    class="ml-4"
+                    :color="getColorName(words.class)"
+                  >
+                    {{ words.count }}
+                  </v-chip>
+                </RouterLink>
+                <v-list
+                  v-for="(elevels, elevel) in words.elevels"
+                  :key="elevel"
+                  density="compact"
+                  class="py-0"
+                >
+                  <v-list-item>
+                    <RouterLink
+                      v-bind:to="{
+                        name: 'Search',
+                        query: searchParam2Query<LocationQueryRaw>({
+                          q: word,
+                          el: elevel,
+                        }),
+                      }"
+                    >
+                      <v-chip
+                        :color="elevelColor[elevel]"
+                      >
+                        {{ elevel }}
+                      </v-chip>
+                      <v-chip
+                        class="ml-4"
+                        :color="getColorName(words.class)"
+                      >
+                        {{ elevels.count }}
+                      </v-chip>
+                    </RouterLink>
+                    <v-list
+                      v-for="(num, id) in elevels.ids"
+                      :key="id"
+                      density="compact"
+                      class="py-0"
+                    >
+                      <v-list-item>
+                        <RouterLink
+                          v-bind:to="{
+                            name: 'Search',
+                            query: searchParam2Query<LocationQueryRaw>({
+                              q: word,
+                              el: elevel,
+                              bid: getBid(id as string),
+                            }),
+                          }"
+                        >
+                          {{ getTitle(id as string) }}
+                          <v-chip
+                            class="ml-4"
+                            :color="getColorName(words.class)"
+                          >
+                            {{ num }}
+                          </v-chip>
+                        </RouterLink>
+                      </v-list-item>
+                    </v-list>
+                  </v-list-item>
+                </v-list>
+              </v-list-item>
+            </v-list>
+          </v-card>
+        </v-col>
+        <v-col cols="12" md="8">
+          <v-data-iterator :items="matches">
+            <template
+              v-for="(item, idx) in matches"
+              :key="idx"
+            >
+              <v-card
+                hover
+                class="mt-2"
+              >
+                <v-card-title class="text-body-1 font-weight-regular">
+                  {{ (idx+1) }}.
+                  {{ getTitle(item.id) }}
+                  {{
+                    item.pages[0] === item.pages[1]
+                    ? item.pages[0] + '.'
+                      + (
+                        item.lines[0] === item.lines[1]
+                        ? item.lines[0]
+                        : `${item.lines[0]}&ndash;${item.lines[1]}`
+                      )
+                    : `${item.pages[0]}.${item.lines[0]}`
+                      + `&ndash;${item.pages[1]}.${item.lines[1]}`
+                  }}
+                  <v-chip
+                    :color="getELevelColor(item.id)"
+                  >
+                    {{ getELevel(item.id) }}
+                  </v-chip>
+                  <a
+                    title="国書DBで開く"
+                    target="_blank"
+                    :href="getKokushoLink(item)"
+                  >
+                    <v-btn
+                      variant="text"
+                      icon="mdi-open-in-new"
+                      color="red-lighten-2"
+                    ></v-btn>
+                  </a>
+                  <span>
+                    <v-overlay
+                      activator="parent"
+                      location-strategy="connected"
+                      scroll-strategy="block"
+                    >
+                      <template v-slot:activator="{ props }">
+                        <v-btn
+                          v-bind="props"
+                          variant="text"
+                          icon="mdi-tooltip-image"
+                          color="red-lighten-2"
+                        ></v-btn>
+                      </template>
+                      <img :src="getRectURL(item)"/>
+                    </v-overlay>
+                  </span>
+                </v-card-title>
+                <v-card-text>
+                  <span
+                    :class="'text ' + getColorNameFromText(item.text)"
+                    v-html="item.text"
+                  ></span>
+                </v-card-text>
+              </v-card>
+            </template>
+          </v-data-iterator>
+        </v-col>
+      </v-row>
+    </v-container>
+  </v-form>
+</template>
+
+<script lang="ts" setup>
+  import type { LocationQueryRaw } from 'vue-router'
+  import type { TextSearchQueryString } from '@/apis/textRepository'
+  import {
+    ref, reactive, computed, watch, onMounted,
+  } from 'vue'
+  import { useRouter } from 'vue-router'
+  import repository from '@/apis/repositoryFactory'
+
+  const router = useRouter()
+
+  // interface
+  interface Data {
+    filters: Filters,
+    bibl: Bibl,
+    match: Match[],
+  }
+
+  interface Filters {
+    keyword: {
+      [cls: string]: {
+        [word: string]: {
+          [id: string]: number
+        },
+      },
+    },
+    tag: {
+      [tag: string]: number,
+    }
+  }
+
+  interface Bibl {
+    [id: string]: {
+      bid: string,
+      cid: string,
+      elevel: string,
+      tags: string[],
+      metadata: Metadata[],
+      label: string,
+      attribution: string,
+      license: string,
+    },
+  }
+
+  interface Metadata {
+    label: string,
+    value: string,
+  }
+
+  interface Facet {
+    keywords: FacetKeywords,
+  }
+
+  interface FacetKeywords {
+    count: number,
+    words: {
+      [word: string]: FacetWord,
+    },
+  }
+
+  interface FacetWord {
+    count: number,
+    elevels: {
+      [elevel: string]: FacetELevel,
+    },
+    class: string,
+    variants: {
+      [variant: string]: boolean,
+    },
+  }
+
+  interface FacetELevel {
+    count: number,
+    ids: {
+      [id: string]: number,
+    },
+  }
+
+  interface Match {
+    id: string,
+    pages: number[],
+    lines: number[],
+    text: string,
+    bbs: BB[],
+    imageid: string[],
+  }
+
+  interface BB {
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  }
+
+  interface RecordCount {
+    [elevel: string]: number
+  }
+
+  interface TextSearchParam {
+    q: string
+    el: string[]
+    tag: string[]
+    bid: string[]
+  }
+
+  // props
+  const props = defineProps<TextSearchQueryString>()
+
+  // data
+  const errmsg = ref<string>(''),
+        isValid = ref<boolean>(true),
+        isLoading = ref<boolean>(false),
+        searchParam = reactive<TextSearchParam>({
+          q: '',
+          el: [],
+          tag: [],
+          bid: [],
+        }),
+        elevelList = ref<string[]>(['OCR', 'PROOF_READ']),
+        elevelColor = reactive<{ [elevel: string]: string }>({
+          'OCR': 'dark-grey',
+          'PROOF_READ': 'grey',
+        }),
+        recordCount = ref<RecordCount>({}),
+        data = ref<Data | null>(null)
+  
+  // computed
+  const facets = computed<Facet | null>(() => {
+    if (!data.value) {
+      return null
+    }
+    const f: Facet = {
+      keywords: {
+        count: 0,
+        words: {},
+      }
+    }
+    for (const [cls, words] of Object.entries(data.value?.filters.keyword)) {
+      const key: string = Object.keys(words)[0]
+      f.keywords.words[key] = {
+        count: 0,
+        elevels: {},
+        class: cls,
+        variants: {},
+      }
+      for (const [word, elevels] of Object.entries(words)) {
+        f.keywords.words[key].variants[word] = true
+        for (const [elevel, ids] of Object.entries(elevels)) {
+          f.keywords.words[key].elevels[elevel] = {
+            count: 0,
+            ids: {},
+          }
+          for (const [id, num] of Object.entries(ids)) {
+            f.keywords.count += num
+            f.keywords.words[key].count += num
+            f.keywords.words[key].elevels[elevel].count += num
+            f.keywords.words[key].elevels[elevel].ids[id] = num
+          }
+        }
+      }
+    }
+    return f
+  })
+  const bibls = computed<Bibl>(() => data.value?.bibl || {})
+  const matches = computed<Match[]>(() => data.value?.match || [])
+
+  // methods
+  function searchProps2Param() {
+    searchParam.q = props.q.split(',')
+      .reduce((s: string, w: string): string => (
+        w.indexOf(' ') === -1
+          ? `${s} ${w}`
+          : `${s} "${w}"`
+      ), '').substring(1)
+    searchParam.el = props.el?.split(',') || elevelList.value
+    searchParam.tag = props.tag?.split(',') || []
+    searchParam.bid = props.bid?.split(',') || []
+    loadItems()
+  }
+
+  function searchParam2Query<T>(opt?: T): T {
+    const regexp = /(:?"([^"]+)"|([^\s]+))/g;
+    const t: {
+      q: string
+      el?: string
+      tag?: string
+      bid?: string
+    } = {
+      q: [...searchParam.q.matchAll(regexp)]
+        .map((m) => m[2] || m[1])
+        .join(','),
+    }
+    if(searchParam.el && searchParam.el.length < elevelList.value.length) {
+      t.el = searchParam.el.join(',')
+    }
+    if(searchParam.tag && searchParam.tag.length > 0) {
+      t.tag = searchParam.tag?.join(',')
+    }
+    if(searchParam.bid && searchParam.bid.length > 0) {
+      t.bid = searchParam.bid?.join(',')
+    }
+    if (opt) {
+      Object.assign(t, opt)
+    }
+    return t as T
+  }
+
+  function onSubmit(): void {
+    router.push({
+      name: 'Search',
+      query: searchParam2Query<LocationQueryRaw>(),
+    })
+  }
+
+  async function loadItems(): Promise<void> {
+    isLoading.value = true
+    const response = await repository.texts
+      .getNgramSearch(searchParam2Query<TextSearchQueryString>())
+    data.value = response.data
+    isLoading.value = false
+  }
+
+  function getKokushoLink(item: Match): string {
+    return `https://kokusho.nijl.ac.jp/biblio/${bibls.value[item.id].bid}/${item.pages[0]+1}`
+  }
+
+  function getRectURL(item: Match): string {
+    const xr: number = item.bbs[0]
+      ? item.bbs[0].x + item.bbs[0].w
+      : item.bbs[1].x + item.bbs[1].w
+    const xl: number = item.bbs[2]
+      ? item.bbs[2].x
+      : item.bbs[1].x
+    const yt: number = Math.min(
+      item.bbs[0]?.y || Number.MAX_SAFE_INTEGER,
+      item.bbs[1].y,
+      item.bbs[2]?.y || Number.MAX_SAFE_INTEGER,
+    )
+    const yb: number = Math.max(
+      item.bbs[0] ? item.bbs[0].y + item.bbs[0].h : 0,
+      item.bbs[1].y + item.bbs[1].h,
+      item.bbs[2] ? item.bbs[2].y + item.bbs[2].h : 0,
+    )
+    return `${item.imageid}/${xl},${yt},${xr-xl},${yb-yt}/,600/0/default.jpg`
+  }
+  
+  const getColorName = function(): (name: string) => string {
+    let idx = 0
+    const colors: string[] = [
+      'red', 'purple', 'pink', 'deep-purple', 'indigo',
+    ]
+    const hash: {[key: string]: string} = {}
+    return function(name: string): string {
+      if (!hash[name]) {
+        hash[name] = colors[idx]
+        idx++
+        if (idx === colors.length) {
+          idx = 0
+        }
+      }
+      return hash[name]
+    }
+  }()
+
+  function getColorNameFromText(text: string): string {
+    const color = (/em class="(hlt\d+)"/.exec(text) || [])[1] || ''
+    if (color) {
+      return getColorName(color)
+    }
+    return ''
+  }
+  
+  function getBid(id: string): string {
+    return bibls.value[id].bid
+  }
+
+  function getTitle(id: string): string {
+    const m = bibls.value[id]
+    return `${m.bid} ${m.label}`
+  }
+
+  function getELevel(id: string): string {
+    return bibls.value[id].elevel
+  }
+
+  function getELevelColor(id: string): string {
+    return elevelColor[bibls.value[id].elevel]
+  }
+
+  async function fetchCount(): Promise<void> {
+    const response = await repository.texts.getCount()
+    recordCount.value = response.data.recordCount
+  }
+
+  watch(
+    () => props,
+    searchProps2Param,
+    { deep: true },
+  )
+
+  // Lifecycle hook
+  onMounted(() => {
+    fetchCount()
+    searchProps2Param()
+  })
+</script>
+
+<style scoped>
+.router-link-active {
+  text-decoration: none;
+  color: inherit;
+}
+
+em, .text ::v-deep(em) {
+  font-style: normal;
+  font-weight: bold;
+}
+
+em.red, .red ::v-deep(em) {
+  color: #F44336;
+}
+
+em.pink, .pink ::v-deep(em) {
+  color: #E91E63;
+}
+
+em.purple, .purple ::v-deep(em) {
+  color: #9C27B0;
+}
+
+em.deep-purple, .deep-purple ::v-deep(em) {
+  color: #673AB7;
+}
+
+em.indigo, .indigo ::v-deep(em) {
+  color: #3f51B5;
+}
+</style>
