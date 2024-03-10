@@ -9,6 +9,14 @@ fulltext search front-end
 yarn
 ```
 
+## Environment variables setup
+
+```
+# see .env.development.sample
+vi .env.development.local
+vi .env.local
+```
+
 ### Compiles and hot-reloads for development
 
 ```
