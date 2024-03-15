@@ -27,6 +27,8 @@ const routes = [
           el: route.query.el,
           tag: route.query.tag,
           bid: route.query.bid,
+          page: route.query.page,
+          perPage: route.query.perPage,
         }),
       },
     ],

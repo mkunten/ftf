@@ -1,5 +1,5 @@
 <template>
-  <v-form v-model="isValid" @submit.prevent="onSubmit">
+  <v-form v-model="isValid" @submit.prevent="routerPush({page: 1})">
     <v-container>
       <v-row>
         <v-col cols="12" sm="2" xs="0">
@@ -87,6 +87,18 @@
             :icon="'mdi-chevron-triple-'+(isRail ? 'right' : 'left')"
             @click.stop="isRail = !isRail"
           ></v-btn>
+          <v-card
+            v-if="!isRail"
+          >
+            <v-select
+              label="per page"
+              v-model="searchParam.perPage"
+              :items="[10, 20, 50, 100, 200]"
+              item-title="value"
+              variant="solo-inverted"
+              @update:modelValue="routerPush({page: 1})"
+            ></v-select>
+          </v-card>
           <v-card
             v-if="!isRail && facets"
             hover
@@ -179,6 +191,21 @@
           </v-card>
         </v-navigation-drawer>
         <v-main>
+          <v-card
+            v-if="total"
+            variant="elevated"
+            class="mb-2"
+          >
+            <p class="ml-4">{{ total }} 箇所見つかりました。</p>
+            <v-container>
+              <v-pagination
+                v-model="searchParam.page"
+                :length="Math.ceil(total / searchParam.perPage)"
+                :total-visible="6"
+                @update:modelValue="routerPush()"
+              ></v-pagination>
+            </v-container>
+          </v-card>
           <v-data-iterator :items="matches">
             <template
               v-for="(item, idx) in matches"
@@ -189,7 +216,7 @@
                 class="mt-2"
               >
                 <v-card-title class="text-body-1 font-weight-regular">
-                  {{ (idx+1) }}.
+                  {{ ((searchParam.page-1)*searchParam.perPage+idx+1) }}.
                   {{ getTitle(item.id) }}
                   {{
                     item.pages[0] === item.pages[1]
@@ -275,6 +302,9 @@
     filters: Filters,
     bibl: Bibl,
     match: Match[],
+    page: number,
+    perPage: number,
+    total: number,
   }
 
   interface Filters {
@@ -362,6 +392,8 @@
     el: string[]
     tag: string[]
     bid: string[]
+    page: number
+    perPage: number
   }
 
   // props
@@ -377,6 +409,8 @@
           el: [],
           tag: [],
           bid: [],
+          page: 0,
+          perPage: 20,
         }),
         elevelList = ref<string[]>(['OCR', 'PROOF_READ']),
         elevelColor = reactive<{ [elevel: string]: string }>({
@@ -425,6 +459,7 @@
   })
   const bibls = computed<Bibl>(() => data.value?.bibl || {})
   const matches = computed<Match[]>(() => data.value?.match || [])
+  const total = computed<number>(() => data.value?.total || 0)
 
   // methods
   function searchProps2Param() {
@@ -437,6 +472,8 @@
     }
     searchParam.el = props.el?.split(',') || elevelList.value
     searchParam.tag = props.tag?.split(',') || []
+    searchParam.page = parseInt(props.page) || 1
+    searchParam.perPage = parseInt(props.perPage) || 20
     loadItems()
   }
 
@@ -445,6 +482,8 @@
     el?: string
     tag?: string
     bid?: string
+    page?: number
+    perPage?: number
   }): T {
     const regexp = /(:?"([^"]+)"|([^\s]+))/g;
     const t: {
@@ -452,6 +491,8 @@
       el?: string
       tag?: string
       bid?: string
+      page?: number
+      perPage?: number
     } = { q: ''}
 
     const aq: string[] = []
@@ -459,9 +500,9 @@
     const matches: RegExpMatchArray[] = [
       ...searchParam.q.matchAll(regexp),
     ]
-    for(let i = 0; i < matches.length; i++) {
+    for (let i = 0; i < matches.length; i++) {
       const s:string = (matches[i][2] || matches[i][1]) as unknown as string
-      if(s.slice(0, 4) === 'bid:') {
+      if (s.slice(0, 4) === 'bid:') {
         abid.push(s.slice(4))
       } else {
         aq.push(s)
@@ -472,11 +513,17 @@
     if (abid.length > 0) {
       t.bid = abid.join(',')
     }
-    if(searchParam.el && searchParam.el.length < elevelList.value.length) {
+    if (searchParam.el && searchParam.el.length < elevelList.value.length) {
       t.el = searchParam.el.join(',')
     }
-    if(searchParam.tag && searchParam.tag.length > 0) {
+    if (searchParam.tag && searchParam.tag.length > 0) {
       t.tag = searchParam.tag?.join(',')
+    }
+    if (searchParam.page !== 1) {
+      t.page = searchParam.page
+    }
+    if (searchParam.perPage !== 20) {
+      t.perPage = searchParam.perPage
     }
     if (opt) {
       Object.assign(t, opt)
@@ -489,14 +536,27 @@
       if (t.bid === '') {
         delete t.bid
       }
+      if (t.page === 1) {
+        delete t.page
+      }
+      if (t.perPage === 20) {
+        delete t.perPage
+      }
     }
     return t as T
   }
 
-  function onSubmit(): void {
+  function routerPush<T>(opt?: {
+    q?: string
+    el?: string
+    tag?: string
+    bid?: string
+    page?: number
+    perPage?: number
+  }): void {
     router.push({
       name: 'Search',
-      query: searchParam2Query<LocationQueryRaw>(),
+      query: searchParam2Query<LocationQueryRaw>(opt),
     })
   }
 
@@ -504,7 +564,13 @@
     isLoading.value = true
     const response = await repository.texts
       .getNgramSearch(searchParam2Query<TextSearchQueryString>())
-    data.value = response.data
+      .catch((e) => {
+        errmsg.value = e.response.data.message
+      })
+    if (response) {
+      errmsg.value = ''
+      data.value = response.data
+    }
     isLoading.value = false
   }
 

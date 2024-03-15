@@ -8,6 +8,8 @@ export interface TextSearchQueryString {
   el?: string
   tag?: string
   bid?: string
+  page?: string
+  perPage?: string
 }
 
 export default class TextRepository {
