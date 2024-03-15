@@ -79,16 +79,25 @@
       <v-layout>
         <v-navigation-drawer
           permanent
-          :rail="isRail"
+          :rail="!showNav"
           bottom
         >
-          <v-btn
-            variant="text"
-            :icon="'mdi-chevron-triple-'+(isRail ? 'right' : 'left')"
-            @click.stop="isRail = !isRail"
-          ></v-btn>
+          <v-container class="d-flex flex-wrap">
+            <v-btn
+              class="me-auto"
+              variant="text"
+              :icon="'mdi-chevron-triple-'+(showNav ? 'right' : 'left')"
+              @click.stop="showNav = !showNav; showSettings = false"
+            ></v-btn>
+            <v-btn
+              class="ml-auto mr-0"
+              :variant="showSettings ? 'tonal' : 'text'"
+              icon="mdi-cog"
+              @click.stop="showNav = true; showSettings = !showSettings"
+            ></v-btn>
+          </v-container>
           <v-card
-            v-if="!isRail"
+            v-if="showNav && showSettings"
           >
             <v-select
               label="per page"
@@ -100,7 +109,7 @@
             ></v-select>
           </v-card>
           <v-card
-            v-if="!isRail && facets"
+            v-if="showNav && facets"
             hover
             class="mt-2"
           >
@@ -199,6 +208,7 @@
             <p class="ml-4">{{ total }} 箇所見つかりました。</p>
             <v-container>
               <v-pagination
+                v-if="total > searchParam.perPage"
                 v-model="searchParam.page"
                 :length="Math.ceil(total / searchParam.perPage)"
                 :total-visible="6"
@@ -401,7 +411,8 @@
 
   // data
   const errmsg = ref<string>(''),
-        isRail = ref<boolean>(disp.mdAndUp.value ? false : true),
+        showNav = ref<boolean>(disp.mdAndUp.value ? true : false),
+        showSettings = ref<boolean>(false),
         isValid = ref<boolean>(true),
         isLoading = ref<boolean>(false),
         searchParam = reactive<TextSearchParam>({
